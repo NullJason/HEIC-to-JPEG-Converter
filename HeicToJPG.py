@@ -135,16 +135,35 @@ def resolve_overwrite(path: Path) -> bool:
         return False
 
 
-def resolve_path(raw: str) -> Path | None:
-    raw = raw.strip().strip('"')
+def resolve_path() -> Path | None:
+    while True:
+        raw = prompt_for_path()
 
-    p = Path(raw)
+        if raw is None:
+            print("No path provided.")
+            continue
 
-    # normalize relative forms
-    if not p.is_absolute():
-        p = (Path.cwd() / p).resolve()
+        p = Path(str(raw).strip().strip('"'))
 
-    return p
+        if not p.is_absolute():
+            p = (Path.cwd() / p).resolve()
+
+        if p.exists():
+            return p
+
+        suggestion = suggest_path(str(raw))
+
+        if suggestion:
+            ok = prompt_yes_no(f"Path not found.\nDid you mean:\n{suggestion}?")
+            if ok:
+                return suggestion
+
+        retry = prompt_yes_no(
+            f"Invalid path:\n{p}\n\nTry again?"
+        )
+
+        if not retry:
+            raise SystemExit(0)
 
 
 def suggest_path(raw: str) -> Path | None:
@@ -270,6 +289,8 @@ def scan_folder(folder: Path) -> tuple[int, int, list[Path]]:
     heic_bytes = 0
     heic_files: list[Path] = []
 
+    count = 0
+
     for root, _, files in os.walk(folder):
         root_path = Path(root)
         for name in files:
@@ -280,9 +301,13 @@ def scan_folder(folder: Path) -> tuple[int, int, list[Path]]:
                 continue
 
             total_bytes += size
+            count+=1
             if p.suffix.lower() == ".heic":
                 heic_bytes += size
                 heic_files.append(p)
+
+            if count % 10000 == 0:
+                print(f"Scanned {count} files...")
 
     return total_bytes, heic_bytes, heic_files
 
@@ -316,6 +341,9 @@ def convert_folder(folder: Path) -> tuple[int, int, list[Path]]:
     converted = 0
     failed = 0
 
+    print("Please Wait")
+    print("Converting...")
+    
     for src in heic_files:
         result = convert_one_file(src)
         if result:
@@ -369,21 +397,7 @@ def post_run_menu(last_folder: Path | None, converted_files: list[Path]):
 
 
 def main() -> int:
-    raw = prompt_for_path()
-    if raw is None:
-        print("No path selected.")
-        return 1
-
-    target = resolve_path(str(raw))
-
-    if target is None or not target.exists():
-        suggestion = suggest_path(str(raw))
-
-        if suggestion and prompt_yes_no(f"Path not found.\nDid you mean:\n{suggestion}?"):
-            target = suggestion
-        else:
-            print(f"Invalid path: {raw}")
-            return 1
+    target = resolve_path()
         
     if target is None:
         print("No path selected.")
